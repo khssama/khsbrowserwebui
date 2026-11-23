@@ -31,9 +31,11 @@ BROWSER_PATHS = (
 )
 
 # Flags grouped by strategy. We try each group until the browser stays alive.
-# Group 0: headless new (most reliable on bare Xvfb / containers)
-CHROME_FLAGS_HEADLESS_NEW = (
-    "--headless=new",
+# IMPORTANT: --headless=new makes Chrome render to an offscreen buffer instead
+# of the X11 display, so ximagesrc captures a black screen. For streaming to
+# work, Chrome must draw to X11 (non-headless mode on Xvfb).
+# Group 0: non-headless on Xvfb (PRIMARY - draws to X11, stream works)
+CHROME_FLAGS_VISIBLE = (
     "--no-first-run",
     "--no-default-browser-check",
     "--disable-translate",
@@ -68,7 +70,43 @@ CHROME_FLAGS_HEADLESS_NEW = (
     "--remote-debugging-port=0",
 )
 
-# Group 1: headless old (older Chromium versions)
+# Group 1: headless new (fallback - browser stays alive but stream is black)
+CHROME_FLAGS_HEADLESS_NEW = (
+    "--headless=new",
+    "--no-first-run",
+    "--no-default-browser-check",
+    "--disable-translate",
+    "--disable-infobars",
+    "--disable-features=TranslateUI",
+    "--password-store=basic",
+    "--use-mock-keychain",
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--disable-dev-shm-usage",
+    "--disable-gpu",
+    "--disable-gpu-sandbox",
+    "--no-zygote",
+    "--autoplay-policy=no-user-gesture-required",
+    "--disable-background-timer-throttling",
+    "--disable-renderer-backgrounding",
+    "--disable-backgrounding-occluded-windows",
+    "--disable-ipc-flooding-protection",
+    "--disable-background-networking",
+    "--disable-hang-monitor",
+    "--disable-breakpad",
+    "--disable-component-update",
+    "--disable-default-apps",
+    "--disable-domain-reliability",
+    "--disable-sync",
+    "--metrics-recording-only",
+    "--safebrowsing-disable-auto-update",
+    "--force-color-profile=srgb",
+    "--force-device-scale-factor=1",
+    "--hide-crash-restore-bubble",
+    "--remote-debugging-port=0",
+)
+
+# Group 2: headless old (older Chromium versions)
 CHROME_FLAGS_HEADLESS_OLD = (
     "--headless",
     "--no-first-run",
@@ -104,45 +142,10 @@ CHROME_FLAGS_HEADLESS_OLD = (
     "--remote-debugging-port=0",
 )
 
-# Group 2: non-headless on Xvfb (last resort, needs a real display)
-CHROME_FLAGS_VISIBLE = (
-    "--no-first-run",
-    "--no-default-browser-check",
-    "--disable-translate",
-    "--disable-infobars",
-    "--disable-features=TranslateUI",
-    "--password-store=basic",
-    "--use-mock-keychain",
-    "--no-sandbox",
-    "--disable-setuid-sandbox",
-    "--disable-dev-shm-usage",
-    "--disable-gpu",
-    "--disable-gpu-sandbox",
-    "--no-zygote",
-    "--autoplay-policy=no-user-gesture-required",
-    "--disable-background-timer-throttling",
-    "--disable-renderer-backgrounding",
-    "--disable-backgrounding-occluded-windows",
-    "--disable-ipc-flooding-protection",
-    "--disable-background-networking",
-    "--disable-hang-monitor",
-    "--disable-breakpad",
-    "--disable-component-update",
-    "--disable-default-apps",
-    "--disable-domain-reliability",
-    "--disable-sync",
-    "--metrics-recording-only",
-    "--safebrowsing-disable-auto-update",
-    "--force-color-profile=srgb",
-    "--force-device-scale-factor=1",
-    "--hide-crash-restore-bubble",
-    "--remote-debugging-port=0",
-)
-
 CHROME_FLAG_GROUPS = (
+    CHROME_FLAGS_VISIBLE,
     CHROME_FLAGS_HEADLESS_NEW,
     CHROME_FLAGS_HEADLESS_OLD,
-    CHROME_FLAGS_VISIBLE,
 )
 
 
