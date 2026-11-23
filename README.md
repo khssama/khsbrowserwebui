@@ -4,6 +4,8 @@ A lightweight remote-browser web UI that runs anywhere Linux runs. It launches C
 
 No WebRTC, no GStreamer, no firewall ports beyond HTTP — if you can reach an HTTP page, it works.
 
+![khsbrowserwebui example](docs/screenshot.png)
+
 ```
 ┌─────────────┐   JPEG frames over WebSocket   ┌─────────────┐
 │   Chrome    │ ─────────────────────────────► │  your web   │
