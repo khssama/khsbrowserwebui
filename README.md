@@ -6,6 +6,8 @@ No WebRTC, no GStreamer, no firewall ports beyond HTTP — if you can reach an H
 
 ![khsbrowserwebui example](docs/screenshot.png)
 
+![Another example](docs/example-2.png)
+
 ```
 ┌─────────────┐   JPEG frames over WebSocket   ┌─────────────┐
 │   Chrome    │ ─────────────────────────────► │  your web   │
