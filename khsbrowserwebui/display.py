@@ -1,4 +1,8 @@
-"""Virtual display and browser process management with robust fallbacks."""
+"""Virtual display and browser process management.
+
+Starts Xvfb + Chrome on a virtual X display so ximagesrc can capture real
+screen content (not black). Chrome must run NON-headless so it draws to X11.
+"""
 
 from __future__ import annotations
 
@@ -30,12 +34,10 @@ BROWSER_PATHS = (
     "/snap/bin/chromium",
 )
 
-# Flags grouped by strategy. We try each group until the browser stays alive.
-# IMPORTANT: --headless=new makes Chrome render to an offscreen buffer instead
-# of the X11 display, so ximagesrc captures a black screen. For streaming to
-# work, Chrome must draw to X11 (non-headless mode on Xvfb).
-# Group 0: non-headless on Xvfb (PRIMARY - draws to X11, stream works)
-CHROME_FLAGS_VISIBLE = (
+# Chrome flags for NON-headless mode on Xvfb.
+# Must NOT use --headless=new or --headless, otherwise Chrome draws to an
+# offscreen buffer and ximagesrc captures a black screen.
+CHROME_FLAGS = (
     "--no-first-run",
     "--no-default-browser-check",
     "--disable-translate",
@@ -70,84 +72,6 @@ CHROME_FLAGS_VISIBLE = (
     "--remote-debugging-port=0",
 )
 
-# Group 1: headless new (fallback - browser stays alive but stream is black)
-CHROME_FLAGS_HEADLESS_NEW = (
-    "--headless=new",
-    "--no-first-run",
-    "--no-default-browser-check",
-    "--disable-translate",
-    "--disable-infobars",
-    "--disable-features=TranslateUI",
-    "--password-store=basic",
-    "--use-mock-keychain",
-    "--no-sandbox",
-    "--disable-setuid-sandbox",
-    "--disable-dev-shm-usage",
-    "--disable-gpu",
-    "--disable-gpu-sandbox",
-    "--no-zygote",
-    "--autoplay-policy=no-user-gesture-required",
-    "--disable-background-timer-throttling",
-    "--disable-renderer-backgrounding",
-    "--disable-backgrounding-occluded-windows",
-    "--disable-ipc-flooding-protection",
-    "--disable-background-networking",
-    "--disable-hang-monitor",
-    "--disable-breakpad",
-    "--disable-component-update",
-    "--disable-default-apps",
-    "--disable-domain-reliability",
-    "--disable-sync",
-    "--metrics-recording-only",
-    "--safebrowsing-disable-auto-update",
-    "--force-color-profile=srgb",
-    "--force-device-scale-factor=1",
-    "--hide-crash-restore-bubble",
-    "--remote-debugging-port=0",
-)
-
-# Group 2: headless old (older Chromium versions)
-CHROME_FLAGS_HEADLESS_OLD = (
-    "--headless",
-    "--no-first-run",
-    "--no-default-browser-check",
-    "--disable-translate",
-    "--disable-infobars",
-    "--disable-features=TranslateUI",
-    "--password-store=basic",
-    "--use-mock-keychain",
-    "--no-sandbox",
-    "--disable-setuid-sandbox",
-    "--disable-dev-shm-usage",
-    "--disable-gpu",
-    "--disable-gpu-sandbox",
-    "--no-zygote",
-    "--autoplay-policy=no-user-gesture-required",
-    "--disable-background-timer-throttling",
-    "--disable-renderer-backgrounding",
-    "--disable-backgrounding-occluded-windows",
-    "--disable-ipc-flooding-protection",
-    "--disable-background-networking",
-    "--disable-hang-monitor",
-    "--disable-breakpad",
-    "--disable-component-update",
-    "--disable-default-apps",
-    "--disable-domain-reliability",
-    "--disable-sync",
-    "--metrics-recording-only",
-    "--safebrowsing-disable-auto-update",
-    "--force-color-profile=srgb",
-    "--force-device-scale-factor=1",
-    "--hide-crash-restore-bubble",
-    "--remote-debugging-port=0",
-)
-
-CHROME_FLAG_GROUPS = (
-    CHROME_FLAGS_VISIBLE,
-    CHROME_FLAGS_HEADLESS_NEW,
-    CHROME_FLAGS_HEADLESS_OLD,
-)
-
 
 def display_socket(display_num: int) -> Path:
     return Path(f"/tmp/.X11-unix/X{display_num}")
@@ -162,7 +86,6 @@ def pick_display(requested: str | None) -> int:
     if requested:
         num = int(requested.lstrip(":"))
         return num
-
     for num in range(99, 89, -1):
         if not display_in_use(num):
             return num
@@ -206,7 +129,7 @@ def start_xvfb(display_num: int, width: int, height: int, depth: int = 24) -> su
         if display_in_use(display_num):
             return proc
         if proc.poll() is not None:
-            # Try once more after cleaning
+            # Try once more after cleaning stale files
             for path in [display_socket(display_num), Path(f"/tmp/.X{display_num}-lock")]:
                 if path.exists():
                     try:
@@ -247,10 +170,10 @@ def start_browser(
     profile_dir: Path,
     debug_port: int = 0,
     extra_args: list[str] | None = None,
-) -> tuple[subprocess.Popen, tuple[str, ...]]:
-    """Start the browser, trying multiple flag groups until one stays alive.
+) -> subprocess.Popen:
+    """Start Chrome/Chromium on the virtual X display.
 
-    Returns (process, flags_used).
+    Returns the process. The caller should verify it stays alive.
     """
     profile_dir.mkdir(parents=True, exist_ok=True)
     for stale in ("SingletonLock", "SingletonSocket", "SingletonCookie", "DevToolsActivePort"):
@@ -263,75 +186,38 @@ def start_browser(
 
     env = dict(os.environ)
     env["DISPLAY"] = f":{display_num}"
-    # Chrome/Chrome often complains about running as root without this
-    env.setdefault("CHROME_DEVEL_SANDBOX", "/usr/bin/chrome-devel-sandbox")
 
-    last_error = ""
-    for flags in CHROME_FLAG_GROUPS:
-        # Override the debugging port with the real one
-        real_flags = []
-        for f in flags:
-            if f.startswith("--remote-debugging-port="):
-                real_flags.append(f"--remote-debugging-port={debug_port}")
-            else:
-                real_flags.append(f)
-        real_flags.extend(extra_args or [])
+    cmd = [
+        browser,
+        f"--window-size={width},{height}",
+        "--window-position=0,0",
+        f"--display=:{display_num}",
+        f"--user-data-dir={profile_dir}",
+        *CHROME_FLAGS,
+        *(extra_args or []),
+        "about:blank",
+    ]
 
-        cmd = [
-            browser,
-            f"--window-size={width},{height}",
-            "--window-position=0,0",
-            f"--display=:{display_num}",
-            f"--user-data-dir={profile_dir}",
-            *real_flags,
-            "about:blank",
-        ]
-
-        flag_str = " ".join(real_flags[:5]) + "..."
-        log.info("trying browser flags: %s", flag_str)
-
-        try:
-            proc = subprocess.Popen(
-                cmd,
-                env=env,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-            )
-        except Exception as exc:
-            last_error = str(exc)
-            log.warning("failed to launch browser: %s", exc)
-            continue
-
-        # Give it a moment to see if it crashes immediately
-        time.sleep(2.0)
-        if proc.poll() is None:
-            log.info("browser started successfully with flags group")
-            return proc, tuple(real_flags)
+    # Override the debugging port with the real one
+    final_cmd = []
+    for arg in cmd:
+        if arg.startswith("--remote-debugging-port="):
+            final_cmd.append(f"--remote-debugging-port={debug_port}")
         else:
-            log.warning("browser crashed immediately with this flag group, trying next...")
-            last_error = f"browser exited with code {proc.returncode}"
-            try:
-                proc.kill()
-            except Exception:
-                pass
-            # Clean up profile so next attempt starts fresh
-            for stale in ("SingletonLock", "SingletonSocket", "SingletonCookie", "DevToolsActivePort"):
-                try:
-                    (profile_dir / stale).unlink()
-                except FileNotFoundError:
-                    pass
+            final_cmd.append(arg)
 
-    raise RuntimeError(
-        f"browser could not stay running on display :{display_num}. Last error: {last_error}\n"
-        "Try installing missing libraries: apt-get install -y libgbm1 libasound2 libatk1.0-0 "
-        "libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 "
-        "libxfixes3 libxrandr2 libgdk-pixbuf2.0-0"
+    log.info("starting browser on :%d", display_num)
+    return subprocess.Popen(
+        final_cmd,
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
     )
 
 
 def focus_browser_window(display_num: int, timeout: float = 5.0) -> bool:
-    """Try to focus the browser window. On headless this usually fails — that's OK."""
+    """Try to focus the browser window. On headless/Xvfb this usually fails — that's OK."""
     try:
         from Xlib import X, display as xdisplay
     except ImportError:

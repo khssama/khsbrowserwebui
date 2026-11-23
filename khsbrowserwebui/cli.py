@@ -135,7 +135,7 @@ async def run(args: argparse.Namespace) -> int:
         else Path.home() / ".local" / "share" / "khsbrowserwebui" / "profile"
     )
 
-    browser_proc, _flags = start_browser(
+    browser_proc = start_browser(
         browser_path,
         display_num,
         args.width,
