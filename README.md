@@ -99,6 +99,8 @@ It prints a URL like `https://abc123.trycloudflare.com`. Open it and add `?token
 --tunnel                start Cloudflare quick tunnel for a public URL
 --tunnel-binary PATH    explicit cloudflared path
 --check                 check system dependencies and exit
+--fix                   auto-fix system issues and exit (agent mode)
+--doctor                alias for --fix
 --debug                 verbose logs
 ```
 
@@ -109,7 +111,38 @@ Examples:
 
 # private server with a token
 ./run.sh --host 0.0.0.0 --port 7071 --token mysecret123
+
+# auto-fix system and start (agent mode)
+./run.sh --fix
+
+# check what's missing without fixing
+./run.sh --check
 ```
+
+---
+
+## Auto-fix agent (--fix / --doctor)
+
+khsbrowserwebui includes a built-in system doctor that acts like an agent: it checks your system, finds what's missing or broken, installs missing packages, tries multiple browser launch strategies, and keeps retrying until it works.
+
+```bash
+# Run the doctor to fix everything automatically
+./run.sh --fix
+
+# Or run it standalone
+python3 -m khsbrowserwebui --fix
+
+# Check only (no fixes)
+./run.sh --check
+```
+
+The doctor will:
+1. Check for Python modules (`aiohttp`, `python-xlib`)
+2. Check for system binaries (`Xvfb`, `ffmpeg`, `chromium`)
+3. Try to install anything missing via your package manager
+4. Test if the browser can actually launch without crashing
+5. Retry with different browser flags if needed
+6. Report success or tell you exactly what to fix manually
 
 ---
 

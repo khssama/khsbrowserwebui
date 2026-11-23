@@ -26,6 +26,7 @@ from .display import (
 )
 from .input import Input
 from .log import log, setup
+from .system_doctor import run_doctor
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -61,6 +62,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--check",
         action="store_true",
         help="check system dependencies and exit",
+    )
+    parser.add_argument(
+        "--fix",
+        action="store_true",
+        help="auto-fix system issues and exit (agent mode)",
+    )
+    parser.add_argument(
+        "--doctor",
+        action="store_true",
+        help="alias for --fix",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return parser.parse_args(argv)
@@ -162,6 +173,9 @@ def find_browser_auto() -> str | None:
 async def run(args: argparse.Namespace) -> int:
     if args.check:
         return check_system()
+
+    if args.fix or args.doctor:
+        return run_doctor(debug=args.debug)
 
     display_num = pick_display(args.display)
     if display_in_use(display_num):
