@@ -30,7 +30,10 @@ BROWSER_PATHS = (
 )
 
 # Chromium/Chrome flags that make it usable on a bare Xvfb display.
+# --headless=new is critical: without it Chromium often crashes when there is
+# no real GPU / window manager available.
 CHROME_FLAGS = (
+    "--headless=new",
     "--no-first-run",
     "--no-default-browser-check",
     "--disable-translate",
@@ -41,6 +44,8 @@ CHROME_FLAGS = (
     "--no-sandbox",
     "--disable-dev-shm-usage",
     "--disable-gpu",
+    "--disable-gpu-sandbox",
+    "--disable-software-rasterizer",
     "--no-zygote",
     "--autoplay-policy=no-user-gesture-required",
     "--disable-background-timer-throttling",
