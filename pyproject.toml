@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "khsbrowserwebui"
+version = "0.1.0"
+description = "Remote browser UI for Kaggle — Chrome on Xvfb streamed as JPEG over WebSocket"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{ name = "khsbrowserwebui" }]
+dependencies = [
+  "aiohttp>=3.9",
+  "python-xlib>=0.33",
+]
+
+[project.scripts]
+khsbrowserwebui = "khsbrowserwebui.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["khsbrowserwebui*"]
+
+[tool.setuptools.package-data]
+khsbrowserwebui = ["static/*"]

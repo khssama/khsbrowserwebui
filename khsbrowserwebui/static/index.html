@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>KHS Browser</title>
+    <link rel="stylesheet" href="static/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header id="topbar">
+        <div class="brand">
+          <span class="logo"></span>
+          <span class="name">KHS Browser</span>
+        </div>
+
+        <div class="status" id="status">
+          <span class="dot" id="dot"></span>
+          <span id="status-text">connecting…</span>
+        </div>
+
+        <div class="actions">
+          <span class="meta" id="meta"></span>
+          <button class="icon-btn" id="btn-fullscreen" title="Fullscreen (F11)">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+            </svg>
+          </button>
+          <button class="icon-btn" id="btn-help" title="Keyboard help">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <main id="stage">
+        <canvas id="screen"></canvas>
+        <div id="waiting">
+          <div class="spinner"></div>
+          <p id="waiting-text">Waiting for the browser…</p>
+        </div>
+        <textarea
+          id="input"
+          spellcheck="false"
+          autocomplete="off"
+          autocapitalize="off"
+          tabindex="0"
+          aria-label="Remote keyboard input"
+        ></textarea>
+      </main>
+
+      <footer id="hint">
+        Click the screen to type · Ctrl+L for the address bar · F11 fullscreen
+      </footer>
+    </div>
+
+    <div id="toast" role="status"></div>
+
+    <div id="help" class="modal hidden">
+      <div class="modal-card">
+        <h2>Using the remote browser</h2>
+        <p>
+          Click anywhere on the stream first so keystrokes are forwarded. Everything you
+          type goes to the remote Chrome, not to this page.
+        </p>
+        <table>
+          <tr><td><kbd>Ctrl</kbd>+<kbd>L</kbd></td><td>Focus the address bar</td></tr>
+          <tr><td><kbd>Ctrl</kbd>+<kbd>T</kbd></td><td>New tab</td></tr>
+          <tr><td><kbd>Ctrl</kbd>+<kbd>R</kbd></td><td>Reload page</td></tr>
+          <tr><td><kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>V</kbd></td><td>Copy / paste (paste is supported)</td></tr>
+          <tr><td><kbd>F11</kbd></td><td>Fullscreen this view (local)</td></tr>
+        </table>
+        <p class="note">
+          Some local browser shortcuts (<kbd>Ctrl</kbd>+<kbd>W</kbd>, <kbd>Ctrl</kbd>+<kbd>N</kbd>)
+          cannot be intercepted by a web page. Use the on-page buttons instead.
+        </p>
+        <button id="btn-close-help">Got it</button>
+      </div>
+    </div>
+
+    <script src="static/app.js"></script>
+  </body>
+</html>
