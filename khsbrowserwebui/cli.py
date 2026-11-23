@@ -14,7 +14,7 @@ from aiohttp import web
 
 from . import __version__
 from .app import create_app
-from .capture import Capture
+from .capture import Capture, ffmpeg_supports_x11grab
 from .display import (
     display_in_use,
     find_browser,
@@ -26,7 +26,6 @@ from .display import (
 )
 from .input import Input
 from .log import log, setup
-from .tunnel import Tunnel
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -58,6 +57,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--tunnel", action="store_true", help="start a Cloudflare quick tunnel")
     parser.add_argument("--tunnel-binary", help="path to cloudflared (default: auto-detect)")
     parser.add_argument("--debug", action="store_true", help="verbose logging")
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="check system dependencies and exit",
+    )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return parser.parse_args(argv)
 
@@ -78,7 +82,87 @@ def print_banner(port: int, display_num: int, browser: str, width: int, height: 
     sys.stdout.flush()
 
 
+def check_system() -> int:
+    """Diagnose the system and report what's missing."""
+    from .capture import ffmpeg_supports_x11grab
+
+    issues = []
+    ok = []
+
+    def check(name: str, available: bool, install_hint: str = "") -> None:
+        if available:
+            ok.append(f"[OK] {name}")
+        else:
+            issues.append(f"[MISSING] {name} {install_hint}")
+
+    # Python
+    check("python3", True)
+    try:
+        import aiohttp  # noqa
+        check("python aiohttp", True)
+    except ImportError:
+        check("python aiohttp", False, "(pip install aiohttp)")
+    try:
+        import Xlib  # noqa
+        check("python Xlib", True)
+    except ImportError:
+        check("python Xlib", False, "(pip install python-xlib)")
+
+    # System binaries
+    check("Xvfb", shutil_available("Xvfb"), "(apt-get install xvfb)")
+    check("ffmpeg", shutil_available("ffmpeg"), "(apt-get install ffmpeg)")
+    if shutil_available("ffmpeg"):
+        check("ffmpeg x11grab", ffmpeg_supports_x11grab(), "(reinstall ffmpeg with x11 support)")
+
+    browser = find_browser_auto()
+    check("Chrome/Chromium", browser is not None, "(apt-get install chromium-browser)")
+
+    # X11 libs
+    for lib in ["libX11", "libXrandr", "libXtst", "libXfixes", "libXcursor"]:
+        check(f"lib {lib}", shutil_available(f"/usr/lib/x86_64-linux-gnu/lib{lib}.so", check_file=True))
+
+    print("=== KHS Browser WebUI System Check ===")
+    print()
+    for line in ok:
+        print(line)
+    if issues:
+        print()
+        print("Issues found:")
+        for line in issues:
+            print(line)
+        print()
+        print("Fix with:")
+        print("  sudo apt-get update")
+        print("  sudo apt-get install -y xvfb ffmpeg chromium-browser python3-pip")
+        print("  pip install aiohttp python-xlib")
+    else:
+        print()
+        print("All dependencies satisfied. You can run:")
+        print("  ./run.sh --port 7071")
+
+    return 1 if issues else 0
+
+
+def shutil_available(name: str, check_file: bool = False) -> bool:
+    import shutil
+    if check_file:
+        return os.path.isfile(name)
+    return shutil.which(name) is not None
+
+
+def find_browser_auto() -> str | None:
+    import shutil
+    for name in ("google-chrome", "google-chrome-stable", "chrome", "chromium", "chromium-browser"):
+        found = shutil.which(name)
+        if found:
+            return found
+    return None
+
+
 async def run(args: argparse.Namespace) -> int:
+    if args.check:
+        return check_system()
+
     display_num = pick_display(args.display)
     if display_in_use(display_num):
         log.info("reusing existing X display :%d", display_num)
@@ -93,7 +177,7 @@ async def run(args: argparse.Namespace) -> int:
         else Path.home() / ".local" / "share" / "khsbrowserwebui" / "profile"
     )
 
-    browser = start_browser(
+    browser_proc, flags_used = start_browser(
         browser_path,
         display_num,
         args.width,
@@ -102,10 +186,12 @@ async def run(args: argparse.Namespace) -> int:
         debug_port=args.chrome_debug_port,
     )
 
+    log.info("browser flags: %s", " ".join(flags_used[:6]) + "...")
+
     if focus_browser_window(display_num):
         log.info("browser window focused")
     else:
-        log.warning("could not focus the browser window; click inside it once")
+        log.warning("could not focus the browser window (headless mode — this is normal)")
 
     capture = Capture(display_num, args.width, args.height, args.fps, args.quality)
     await capture.start()
@@ -124,6 +210,7 @@ async def run(args: argparse.Namespace) -> int:
 
     tunnel = None
     if args.tunnel:
+        from .tunnel import Tunnel
         tunnel = Tunnel(port, args.tunnel_binary)
         await tunnel.start()
 
@@ -132,8 +219,8 @@ async def run(args: argparse.Namespace) -> int:
     async def monitor() -> None:
         while not stop_event.is_set():
             await asyncio.sleep(2)
-            if browser.poll() is not None:
-                log.error("browser exited unexpectedly")
+            if browser_proc.poll() is not None:
+                log.error("browser exited unexpectedly (code %s)", browser_proc.returncode)
                 stop_event.set()
                 return
             if capture.proc and capture.proc.returncode is not None:
@@ -150,8 +237,6 @@ async def run(args: argparse.Namespace) -> int:
 
     try:
         await stop_event.wait()
-        # Give the tunnel a moment to publish its URL if the user stops early.
-        await asyncio.sleep(0)
     finally:
         log.info("shutting down")
         monitor_task.cancel()
@@ -160,7 +245,7 @@ async def run(args: argparse.Namespace) -> int:
         await runner.cleanup()
         await capture.stop()
         input_.close()
-        terminate(browser, "browser")
+        terminate(browser_proc, "browser")
         terminate(xvfb, "Xvfb")
 
     return 0

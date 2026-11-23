@@ -98,6 +98,7 @@ It prints a URL like `https://abc123.trycloudflare.com`. Open it and add `?token
 --token SECRET          require ?token=SECRET to open the UI
 --tunnel                start Cloudflare quick tunnel for a public URL
 --tunnel-binary PATH    explicit cloudflared path
+--check                 check system dependencies and exit
 --debug                 verbose logs
 ```
 
@@ -138,6 +139,45 @@ pkill -f "Xvfb :99"
 - Python 3.9+, `aiohttp`, `python-xlib` (installed automatically by `run.sh`)
 
 ---
+
+## Troubleshooting
+
+**Browser crashes immediately**
+```
+./run.sh --check
+```
+This tells you what's missing. Common fix:
+```bash
+sudo apt-get install -y xvfb ffmpeg chromium-browser \
+  libgbm1 libasound2 libatk1.0-0 libatk-bridge2.0-0 libcups2 \
+  libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 \
+  libxrandr2 libgdk-pixbuf2.0-0
+```
+
+**Port already in use**
+```bash
+./run.sh --port 7072
+```
+
+**Browser runs but screen is black**
+Make sure Xvfb started. Check the log for `starting Xvfb on :NN`. If Xvfb
+failed, install it: `apt-get install -y xvfb`.
+
+**ffmpeg capture fails**
+ffmpeg must be compiled with x11grab support. Check:
+```bash
+ffmpeg -demuxers | grep x11grab
+```
+If nothing shows, reinstall ffmpeg: `apt-get install --reinstall ffmpeg`.
+
+**Can't focus the browser window (warning)**
+This is normal on headless/Xvfb systems — there's no window manager. The
+browser still receives input; just click inside the stream once.
+
+**Permission denied running as root**
+Chrome/Chromium refuses to run as root without `--no-sandbox`, which
+khsbrowserwebui already passes. If you still get sandbox errors, create a
+non-root user and run as that user.
 
 ## License
 

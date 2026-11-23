@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import shutil
+import subprocess
 
 from .log import log
 
@@ -11,6 +12,23 @@ JPEG_SOI = b"\xff\xd8"
 JPEG_EOI = b"\xff\xd9"
 READ_CHUNK = 65536
 MAX_BUFFER = 8 * 1024 * 1024
+
+
+def ffmpeg_supports_x11grab() -> bool:
+    """Check if ffmpeg was compiled with x11grab support."""
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        return False
+    try:
+        result = subprocess.run(
+            [ffmpeg, "-hide_banner", "-demuxers"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return "x11grab" in result.stdout
+    except Exception:
+        return False
 
 
 class Capture:
@@ -35,7 +53,15 @@ class Capture:
     async def start(self) -> None:
         ffmpeg = shutil.which("ffmpeg")
         if not ffmpeg:
-            raise RuntimeError("ffmpeg not found; install it with: apt-get install -y ffmpeg")
+            raise RuntimeError(
+                "ffmpeg not found; install it with: apt-get install -y ffmpeg"
+            )
+
+        if not ffmpeg_supports_x11grab():
+            log.warning(
+                "ffmpeg was compiled without x11grab; "
+                "video capture will not work. Reinstall ffmpeg with x11 support."
+            )
 
         cmd = [
             ffmpeg,
