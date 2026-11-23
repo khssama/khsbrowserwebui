@@ -171,13 +171,13 @@ def start_xvfb(display_num: int, width: int, height: int, depth: int = 24) -> su
     if not xvfb:
         raise RuntimeError("Xvfb not found; install it with: apt-get install -y xvfb")
 
-    # Clean stale socket if it exists
-    sock = display_socket(display_num)
-    if sock.exists():
-        try:
-            sock.unlink()
-        except Exception:
-            pass
+    # Clean stale socket and lock files for this display
+    for path in [display_socket(display_num), Path(f"/tmp/.X{display_num}-lock")]:
+        if path.exists():
+            try:
+                path.unlink()
+            except Exception:
+                pass
 
     cmd = [
         xvfb,
@@ -203,6 +203,13 @@ def start_xvfb(display_num: int, width: int, height: int, depth: int = 24) -> su
         if display_in_use(display_num):
             return proc
         if proc.poll() is not None:
+            # Try once more after cleaning
+            for path in [display_socket(display_num), Path(f"/tmp/.X{display_num}-lock")]:
+                if path.exists():
+                    try:
+                        path.unlink()
+                    except Exception:
+                        pass
             raise RuntimeError("Xvfb exited immediately; check your Xvfb install")
         time.sleep(0.05)
     raise RuntimeError("timed out waiting for Xvfb to start")

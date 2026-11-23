@@ -121,28 +121,40 @@ Examples:
 
 ---
 
-## Auto-fix agent (--fix / --doctor)
+## Autonomous agent (default mode)
 
-khsbrowserwebui includes a built-in system doctor that acts like an agent: it checks your system, finds what's missing or broken, installs missing packages, tries multiple browser launch strategies, and keeps retrying until it works.
+When you run `./run.sh`, khsbrowserwebui starts in **agent mode** — like a small AI agent that:
+
+1. **Checks** your system (Python modules, system binaries, ffmpeg, browser)
+2. **Fixes** anything missing automatically (installs packages via your package manager)
+3. **Starts** a browser session (Xvfb + Chrome + capture + web server)
+4. **Monitors** the session — if the browser or capture crashes, the agent re-diagnoses, re-fixes, and restarts automatically
+5. **Keeps looping** until you press Ctrl+C
 
 ```bash
-# Run the doctor to fix everything automatically
+# Start in agent mode (default — self-heals forever)
+./run.sh --port 7071
+
+# Explicit agent mode
+./run.sh --agent --port 7071
+
+# Just check what's missing (no fixes, no start)
+./run.sh --check
+
+# Fix system issues and exit (don't start the browser)
 ./run.sh --fix
 
-# Or run it standalone
-python3 -m khsbrowserwebui --fix
-
-# Check only (no fixes)
-./run.sh --check
+# Same as --fix
+./run.sh --doctor
 ```
 
-The doctor will:
+The agent will:
 1. Check for Python modules (`aiohttp`, `python-xlib`)
 2. Check for system binaries (`Xvfb`, `ffmpeg`, `chromium`)
 3. Try to install anything missing via your package manager
 4. Test if the browser can actually launch without crashing
 5. Retry with different browser flags if needed
-6. Report success or tell you exactly what to fix manually
+6. If the browser crashes while running, automatically heal and restart
 
 ---
 

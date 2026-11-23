@@ -25,6 +25,7 @@ from .display import (
     terminate,
 )
 from .input import Input
+from .agent import KHSAgent
 from .log import log, setup
 from .system_doctor import run_doctor
 
@@ -72,6 +73,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--doctor",
         action="store_true",
         help="alias for --fix",
+    )
+    parser.add_argument(
+        "--agent",
+        action="store_true",
+        help="autonomous agent mode: self-heals and restarts until stopped (default)",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return parser.parse_args(argv)
@@ -177,7 +183,9 @@ async def run(args: argparse.Namespace) -> int:
     if args.fix or args.doctor:
         return run_doctor(debug=args.debug)
 
-    display_num = pick_display(args.display)
+    # Default behavior: autonomous agent that self-heals forever
+    agent = KHSAgent(args)
+    return await agent.run()
     if display_in_use(display_num):
         log.info("reusing existing X display :%d", display_num)
         xvfb = None
