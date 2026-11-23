@@ -19,7 +19,7 @@ No WebRTC, no GStreamer, no firewall ports beyond HTTP — if you can reach an H
 
 ### 1. Get the code
 ```bash
-git clone https://github.com/YOUR-USERNAME/khsbrowserwebui.git
+git clone https://github.com/khssama/khsbrowserwebui.git
 cd khsbrowserwebui
 chmod +x run.sh
 ```
