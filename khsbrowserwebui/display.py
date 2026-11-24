@@ -7,6 +7,7 @@ screen content (not black). Chrome must run NON-headless so it draws to X11.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -141,24 +142,60 @@ def start_xvfb(display_num: int, width: int, height: int, depth: int = 24) -> su
     raise RuntimeError("timed out waiting for Xvfb to start")
 
 
+def browser_log_path(profile_dir: Path) -> Path:
+    return profile_dir / "browser.log"
+
+
+def probe_browser(browser: str) -> tuple[bool, str]:
+    """Check that a browser binary actually runs.
+
+    Some distros ship a `chromium-browser` wrapper that exits with an error
+    unless the chromium snap is installed. Such a wrapper passes `which` but
+    kills the app a few seconds after launch, so reject it up front.
+    """
+    try:
+        result = subprocess.run(
+            [browser, "--version"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, str(exc)
+
+    output = result.stdout.strip()
+    if result.returncode != 0:
+        return False, output or f"exit status {result.returncode}"
+    if not re.search(r"(?:chrome|chromium|edge|brave)\s+\d", output, re.IGNORECASE):
+        return False, output or "no version output"
+    return True, output.splitlines()[0]
+
+
 def find_browser(explicit: str | None = None) -> str:
     if explicit:
         if Path(explicit).is_file():
-            return explicit
-        found = shutil.which(explicit)
-        if found:
-            return found
-        raise RuntimeError(f"browser not found: {explicit}")
+            path = explicit
+        else:
+            path = shutil.which(explicit) or ""
+        if not path:
+            raise RuntimeError(f"browser not found: {explicit}")
+        ok, detail = probe_browser(path)
+        if not ok:
+            raise RuntimeError(f"browser is not usable: {path} ({detail})")
+        return path
 
-    for name in BROWSER_CANDIDATES:
-        found = shutil.which(name)
-        if found:
-            return found
-    for path in BROWSER_PATHS:
-        if os.path.isfile(path):
+    candidates = [found for name in BROWSER_CANDIDATES if (found := shutil.which(name))]
+    candidates += [path for path in BROWSER_PATHS if os.path.isfile(path)]
+
+    for path in dict.fromkeys(candidates):
+        ok, detail = probe_browser(path)
+        if ok:
             return path
+        log.warning("skipping unusable browser %s: %s", path, detail.replace("\n", " ")[:200])
+
     raise RuntimeError(
-        "no Chrome/Chromium found; install one with: apt-get install -y chromium-browser"
+        "no working Chrome/Chromium found; install Google Chrome or a real Chromium package"
     )
 
 
@@ -207,13 +244,16 @@ def start_browser(
             final_cmd.append(arg)
 
     log.info("starting browser on :%d", display_num)
-    return subprocess.Popen(
-        final_cmd,
-        env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
+    # Keep Chrome's own error output: without it a browser that fails to start
+    # only produces the unhelpful "browser exited unexpectedly" message.
+    with browser_log_path(profile_dir).open("wb") as browser_log:
+        return subprocess.Popen(
+            final_cmd,
+            env=env,
+            stdout=browser_log,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
 
 
 def focus_browser_window(display_num: int, timeout: float = 5.0) -> bool:
@@ -276,6 +316,14 @@ def focus_browser_window(display_num: int, timeout: float = 5.0) -> bool:
         time.sleep(0.25)
 
     return False
+
+
+def browser_log_tail(profile_dir: Path, max_lines: int = 10) -> list[str]:
+    try:
+        lines = browser_log_path(profile_dir).read_text(errors="replace").splitlines()
+    except OSError:
+        return []
+    return [line for line in lines[-max_lines:] if line.strip()]
 
 
 def terminate(proc: subprocess.Popen | None, name: str) -> None:

@@ -78,18 +78,30 @@ for cmd in Xvfb ffmpeg python3; do
     fi
 done
 
-# Browser: accept chromium-browser, chromium, or google-chrome
-BROWSER=""
-for cmd in chromium-browser chromium google-chrome google-chrome-stable; do
-    if command -v "$cmd" &>/dev/null; then
-        BROWSER="$cmd"
-        echo "  OK: browser = $cmd"
-        break
+# Browser: only accept a binary that actually runs. On Ubuntu, chromium-browser
+# can be a stub that fails unless the chromium snap is installed.
+find_working_browser() {
+    python3 -c 'from khsbrowserwebui.display import find_browser; print(find_browser())' 2>/dev/null || true
+}
+BROWSER="$(find_working_browser)"
+if [ -n "$BROWSER" ]; then
+    echo "  OK: browser = $BROWSER"
+else
+    echo "  No working Chrome/Chromium found; installing Google Chrome stable..."
+    CHROME_DEB="$(mktemp /tmp/google-chrome-stable.XXXXXX.deb)"
+    if command -v curl &>/dev/null \
+        && curl -fsSL --max-time 300 -o "$CHROME_DEB" \
+            https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
+        && sudo apt-get install -y -qq "$CHROME_DEB" >/dev/null 2>&1; then
+        BROWSER="$(find_working_browser)"
     fi
-done
-if [ -z "$BROWSER" ]; then
-    echo "  MISSING: no Chrome/Chromium found"
-    MISSING=1
+    rm -f "$CHROME_DEB"
+    if [ -n "$BROWSER" ]; then
+        echo "  OK: browser = $BROWSER"
+    else
+        echo "  MISSING: no working Chrome/Chromium found"
+        MISSING=1
+    fi
 fi
 
 if [ "$MISSING" -ne 0 ]; then

@@ -16,6 +16,7 @@ from . import __version__
 from .app import create_app
 from .capture import Capture
 from .display import (
+    browser_log_tail,
     display_in_use,
     find_browser,
     focus_browser_window,
@@ -121,13 +122,9 @@ async def run(args: argparse.Namespace) -> int:
     if args.check:
         return check_system()
 
+    # Validate the browser before starting Xvfb so a bad binary cannot leave
+    # a virtual display behind (which would break the next launch).
     display_num = pick_display(args.display)
-    if display_in_use(display_num):
-        log.info("reusing existing X display :%d", display_num)
-        xvfb = None
-    else:
-        xvfb = start_xvfb(display_num, args.width, args.height)
-
     browser_path = find_browser(args.browser)
     profile = (
         Path(args.profile).expanduser()
@@ -135,69 +132,85 @@ async def run(args: argparse.Namespace) -> int:
         else Path.home() / ".local" / "share" / "khsbrowserwebui" / "profile"
     )
 
-    browser_proc = start_browser(
-        browser_path,
-        display_num,
-        args.width,
-        args.height,
-        profile,
-        debug_port=args.chrome_debug_port,
-    )
-
-    focus_browser_window(display_num)
-
-    capture = Capture(display_num, args.width, args.height, args.fps, args.quality)
-    await capture.start()
-
-    input_ = Input(f":{display_num}", args.width, args.height)
-
-    app = create_app(capture, input_, display_num, browser_path, args.token)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, args.host, args.port)
-    await site.start()
-
-    sockets = getattr(site._server, "sockets", None) or []
-    port = sockets[0].getsockname()[1] if sockets else args.port
-    print_banner(port, display_num, browser_path, args.width, args.height)
-
+    xvfb = None
+    browser_proc = None
+    capture = None
+    input_ = None
+    runner = None
     tunnel = None
-    if args.tunnel:
-        from .tunnel import Tunnel
-        tunnel = Tunnel(port, args.tunnel_binary)
-        await tunnel.start()
-
+    monitor_task = None
     stop_event = asyncio.Event()
 
-    async def monitor() -> None:
-        while not stop_event.is_set():
-            await asyncio.sleep(2)
-            if browser_proc.poll() is not None:
-                log.error("browser exited unexpectedly")
-                stop_event.set()
-                return
-            if capture.proc and capture.proc.returncode is not None:
-                log.error("capture process exited")
-                stop_event.set()
-                return
-
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        with contextlib.suppress(NotImplementedError):
-            loop.add_signal_handler(sig, stop_event.set)
-
-    monitor_task = asyncio.create_task(monitor())
-
     try:
+        if display_in_use(display_num):
+            log.info("reusing existing X display :%d", display_num)
+        else:
+            xvfb = start_xvfb(display_num, args.width, args.height)
+
+        browser_proc = start_browser(
+            browser_path,
+            display_num,
+            args.width,
+            args.height,
+            profile,
+            debug_port=args.chrome_debug_port,
+        )
+
+        focus_browser_window(display_num)
+
+        capture = Capture(display_num, args.width, args.height, args.fps, args.quality)
+        await capture.start()
+
+        input_ = Input(f":{display_num}", args.width, args.height)
+
+        app = create_app(capture, input_, display_num, browser_path, args.token)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, args.host, args.port)
+        await site.start()
+
+        sockets = getattr(site._server, "sockets", None) or []
+        port = sockets[0].getsockname()[1] if sockets else args.port
+        print_banner(port, display_num, browser_path, args.width, args.height)
+
+        if args.tunnel:
+            from .tunnel import Tunnel
+            tunnel = Tunnel(port, args.tunnel_binary)
+            await tunnel.start()
+
+        async def monitor() -> None:
+            while not stop_event.is_set():
+                await asyncio.sleep(2)
+                if browser_proc.poll() is not None:
+                    log.error("browser exited unexpectedly (code %s)", browser_proc.returncode)
+                    for line in browser_log_tail(profile):
+                        log.error("  browser: %s", line.strip())
+                    stop_event.set()
+                    return
+                if capture.proc and capture.proc.returncode is not None:
+                    log.error("capture process exited")
+                    stop_event.set()
+                    return
+
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            with contextlib.suppress(NotImplementedError):
+                loop.add_signal_handler(sig, stop_event.set)
+
+        monitor_task = asyncio.create_task(monitor())
         await stop_event.wait()
     finally:
         log.info("shutting down")
-        monitor_task.cancel()
+        if monitor_task:
+            monitor_task.cancel()
         if tunnel:
             await tunnel.stop()
-        await runner.cleanup()
-        await capture.stop()
-        input_.close()
+        if runner:
+            await runner.cleanup()
+        if capture:
+            await capture.stop()
+        if input_:
+            input_.close()
         terminate(browser_proc, "browser")
         terminate(xvfb, "Xvfb")
 
